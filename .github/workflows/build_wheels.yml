@@ -99,7 +99,6 @@ jobs:
           $MAKE install_sw
 
       - name: Run OpenSSL
-        if: matrix.goal == 'build'
         run: |
           "${OPENSSL_INSTALL_PATH}/bin/openssl" version -a
           file "${OPENSSL_INSTALL_PATH}/bin/openssl"
