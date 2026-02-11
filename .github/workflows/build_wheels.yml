@@ -41,7 +41,7 @@ jobs:
         run: |
           cd cryptography
           python -m pip install cibuildwheel
-          python -m cibuildwheel --output-dir wheelhouse
+          python -m cibuildwheel --output-dir ../wheelhouse
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
