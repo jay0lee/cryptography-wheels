@@ -5,14 +5,8 @@ on:
 
 jobs:
   build_wheels:
-    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
-    runs-on:
-      macos-15-intel
-      macos-26
-      ubuntu-24.04-arm
-      ubuntu-24.04
-      windows-2025
-      windows-11-arm
+    name: Build on ${{ matrix.os }}
+    runs-on: [ macos-15-intel, macos-26, ubuntu-24.04-arm, ubuntu-24.04, windows-2025, windows-11-arm ]
       
     strategy:
       fail-fast: false
