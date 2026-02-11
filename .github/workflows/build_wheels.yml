@@ -1,12 +1,11 @@
 name: Build Cryptography Wheels
 
-on: 
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build_wheels:
     name: Build on ${{ matrix.os }}
-    runs-on: {{ matrix.os }}
+    runs-on: ${{ matrix.os }}
       
     strategy:
       fail-fast: false
