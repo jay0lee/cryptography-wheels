@@ -4,6 +4,10 @@ on: [push, workflow_dispatch]
 
 jobs:
   build_wheels:
+    defaults:
+      run:
+        shell: bash
+
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
       
