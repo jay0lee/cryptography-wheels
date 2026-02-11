@@ -36,7 +36,7 @@ jobs:
           git checkout "${LATEST_STABLE_TAG}"
           export COMPILED_OPENSSL_VERSION=${LATEST_STABLE_TAG:8} # Trim the openssl- prefix
           echo "COMPILED_OPENSSL_VERSION=${COMPILED_OPENSSL_VERSION}" >> $GITHUB_ENV
-          if ([ "$RUNNER_OS" == "macOS" ]; then
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
             MACOS_MAJOR=$(sw_vers -productVersion | cut -d '.' -f 1)
             export MACOSX_DEPLOYMENT_TARGET="${MACOS_MAJOR}.0"
             echo "We are running on MacOS ${MACOSX_DEPLOYMENT_TARGET}"
