@@ -22,20 +22,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Get latest stable OpenSSL source
+      - name: Env setup
         run: |
-          mkdir -vp "${GITHUB_WORKSPACE}/src"
-          cd "${GITHUB_WORKSPACE}/src"
-          git clone https://github.com/openssl/openssl.git
-          cd "${OPENSSL_SOURCE_PATH}"
-          export LATEST_STABLE_TAG=$(git tag --list openssl-* | grep -v alpha | grep -v beta | sort -Vr | head -n1)
-          echo "Checking out version ${LATEST_STABLE_TAG}"
-          git checkout "${LATEST_STABLE_TAG}"
-          export COMPILED_OPENSSL_VERSION=${LATEST_STABLE_TAG:8} # Trim the openssl- prefix
-          echo "COMPILED_OPENSSL_VERSION=${COMPILED_OPENSSL_VERSION}" >> $GITHUB_ENV
-          OPENSSL_INSTALL_PATH="${GITHUB_WORKSPACE}/bin/ssl"
-          OPENSSL_DIR="$OPENSSL_INSTALL_PATH"
-          OPENSSL_SOURCE_PATH="${GITHUB_WORKSPACE}/src/openssl"
+          export OPENSSL_INSTALL_PATH="${GITHUB_WORKSPACE}/bin/ssl"
+          export OPENSSL_DIR="$OPENSSL_INSTALL_PATH"
+          export OPENSSL_SOURCE_PATH="${GITHUB_WORKSPACE}/src/openssl"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             MACOS_MAJOR=$(sw_vers -productVersion | cut -d '.' -f 1)
             export MACOSX_DEPLOYMENT_TARGET="${MACOS_MAJOR}.0"
@@ -50,6 +41,16 @@ jobs:
           echo "OPENSSL_DIR=${OPENSSL_DIR}" >> $GITHUB_ENV
           echo "OPENSSL_INSTALL_PATH=${OPENSSL_INSTALL_PATH}" >> $GITHUB_ENV
           echo "OPENSSL_SOURCE_PATH=${OPENSSL_SOURCE_PATH}" >> $GITHUB_ENV
+
+      - name: Get latest stable OpenSSL source
+        run: |
+          mkdir -vp "${GITHUB_WORKSPACE}/src"
+          cd "${GITHUB_WORKSPACE}/src"
+          git clone https://github.com/openssl/openssl.git
+          cd "${OPENSSL_SOURCE_PATH}"
+          export LATEST_STABLE_TAG=$(git tag --list openssl-* | grep -v alpha | grep -v beta | sort -Vr | head -n1)
+          echo "Checking out version ${LATEST_STABLE_TAG}"
+          git checkout "${LATEST_STABLE_TAG}"
 
       - name: Windows Configure VCode
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
