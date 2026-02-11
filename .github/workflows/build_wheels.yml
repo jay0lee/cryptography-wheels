@@ -103,6 +103,8 @@ jobs:
         run: |
           "${OPENSSL_INSTALL_PATH}/bin/openssl" version -a
           file "${OPENSSL_INSTALL_PATH}/bin/openssl"
+          echo "Files:"
+          ls -al "$OPENSSL_INSTALL_PATH"
 
       - name: Clone Cryptography
         run: |
