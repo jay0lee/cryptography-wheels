@@ -7,7 +7,12 @@ jobs:
     defaults:
       run:
         shell: bash
-
+    env:
+      OPENSSL_CONFIG_OPTS: no-fips --api=3.0.0
+      OPENSSL_INSTALL_PATH: ${{ github.workspace }}/bin/ssl
+      OPENSSL_DIR: ${{ github.workspace }}/bin/ssl
+      OPENSSL_SOURCE_PATH: ${{ github.workspace }}/src/openssl
+    
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
       
@@ -19,6 +24,76 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Get latest stable OpenSSL source
+        run: |
+          mkdir -vp "${GITHUB_WORKSPACE}/src"
+          cd "${GITHUB_WORKSPACE}/src"
+          git clone https://github.com/openssl/openssl.git
+          cd "${OPENSSL_SOURCE_PATH}"
+          export LATEST_STABLE_TAG=$(git tag --list openssl-* | grep -v alpha | grep -v beta | sort -Vr | head -n1)
+          echo "Checking out version ${LATEST_STABLE_TAG}"
+          git checkout "${LATEST_STABLE_TAG}"
+          export COMPILED_OPENSSL_VERSION=${LATEST_STABLE_TAG:8} # Trim the openssl- prefix
+          echo "COMPILED_OPENSSL_VERSION=${COMPILED_OPENSSL_VERSION}" >> $GITHUB_ENV
+
+      - name: Config OpenSSL
+        run: |
+          cd "${OPENSSL_SOURCE_PATH}"
+          if ([ "$RUNNER_OS" == "Windows" ] && [ "$RUNNER_ARCH" == "ARM64" ]); then
+            # https://github.com/openssl/openssl/issues/26239
+            export CFLAGS=-DNO_INTERLOCKEDOR64
+          fi
+          # --libdir=lib is needed so Python can find OpenSSL libraries
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            PERL="c:\strawberry\perl\bin\perl.exe"
+            MAKE=nmake
+          else
+            PERL=perl
+            MAKE=make
+          fi
+          echo "MAKE=${MAKE}" >> $GITHUB_ENV
+          "${PERL}" ./Configure --libdir=lib --prefix="${OPENSSL_INSTALL_PATH}" $OPENSSL_CONFIG_OPTS
+
+      - name: Rename GNU link on Windows
+        shell: bash
+        run: |
+          mv -v /usr/bin/link /usr/bin/gnulink
+
+      - name: Make OpenSSL
+        run: |
+          cd "${OPENSSL_SOURCE_PATH}"
+          # TODO: remove this once https://github.com/openssl/openssl/issues/26239 is fixed.
+          if ([ "$RUNNER_OS" == "Windows" ] && [ "$RUNNER_ARCH" == "ARM64" ]); then
+            export CFLAGS=-DNO_INTERLOCKEDOR64
+          fi
+          $MAKE
+
+      - name: Install OpenSSL
+        run: |
+          cd "${OPENSSL_SOURCE_PATH}"
+          # install_sw saves us ages processing man pages :-)
+          $MAKE install_sw
+          if [[ "${RUNNER_OS}" != "Windows" ]]; then
+            echo "LDFLAGS=-L${OPENSSL_INSTALL_PATH}/lib" >> $GITHUB_ENV
+          fi
+          echo "CRYPTOGRAPHY_SUPPRESS_LINK_FLAGS=1" >> $GITHUB_ENV
+          case $RUNNER_ARCH in
+            X64)
+              echo "CFLAGS=-I${OPENSSL_INSTALL_PATH}/include ${CFLAGS}" >> $GITHUB_ENV
+              echo "ARCHFLAGS=-arch x86_64" >> $GITHUB_ENV
+              ;;
+            ARM64)
+              echo "CFLAGS=-I${OPENSSL_INSTALL_PATH}/include ${CFLAGS}" >> $GITHUB_ENV
+              echo "ARCHFLAGS=-arch arm64" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Run OpenSSL
+        if: matrix.goal == 'build'
+        run: |
+          "${OPENSSL_INSTALL_PATH}/bin/openssl" version -a
+          file "${OPENSSL_INSTALL_PATH}/bin/openssl"
 
       - name: Clone Cryptography (Latest Stable)
         run: |
