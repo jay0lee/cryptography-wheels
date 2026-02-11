@@ -94,16 +94,16 @@ jobs:
           #fi
           $MAKE
 
-      - name: Rename GNU link on Windows (again)
-        if: runner.os == 'Windows'
-        run: |
-          mv -v /usr/bin/gnulink /usr/bin/link
-
       - name: Install OpenSSL
         run: |
           cd "${OPENSSL_SOURCE_PATH}"
           # install_sw saves us ages processing man pages :-)
           $MAKE install_sw
+
+      - name: Rename GNU link on Windows (again)
+        if: runner.os == 'Windows'
+        run: |
+          mv -v /usr/bin/gnulink /usr/bin/link
 
       - name: Run OpenSSL
         run: |
