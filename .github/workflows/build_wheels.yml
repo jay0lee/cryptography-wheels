@@ -9,9 +9,6 @@ jobs:
         shell: bash
     env:
       OPENSSL_CONFIG_OPTS: no-fips --api=3.0.0
-      OPENSSL_INSTALL_PATH: ${{ github.workspace }}/bin/ssl
-      OPENSSL_DIR: ${{ github.workspace }}/bin/ssl
-      OPENSSL_SOURCE_PATH: ${{ github.workspace }}/src/openssl
     
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -36,6 +33,9 @@ jobs:
           git checkout "${LATEST_STABLE_TAG}"
           export COMPILED_OPENSSL_VERSION=${LATEST_STABLE_TAG:8} # Trim the openssl- prefix
           echo "COMPILED_OPENSSL_VERSION=${COMPILED_OPENSSL_VERSION}" >> $GITHUB_ENV
+          OPENSSL_INSTALL_PATH="${GITHUB_WORKSPACE}/bin/ssl"
+          OPENSSL_DIR="$OPENSSL_INSTALL_PATH"
+          OPENSSL_SOURCE_PATH="${GITHUB_WORKSPACE}/src/openssl"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             MACOS_MAJOR=$(sw_vers -productVersion | cut -d '.' -f 1)
             export MACOSX_DEPLOYMENT_TARGET="${MACOS_MAJOR}.0"
@@ -43,12 +43,13 @@ jobs:
             echo "MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}" >> $GITHUB_ENV
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             # fix paths
-            echo "Was: ${OPENSSL_DIR}"
-            echo "Now: $(cygpath --unix $OPENSSL_DIR)"
-            echo "OPENSSL_DIR=$(cygpath --unix \"${OPENSSL_DIR}\")" >> $GITHUB_ENV
-            echo "OPENSSL_INSTALL_PATH=$(cygpath --unix \"${OPENSSL_INSTALL_PATH}\")" >> $GITHUB_ENV
-            echo "OPENSSL_SOURCE_PATH=$(cygpath --unix \"${OPENSSL_SOURCE_PATH}\")" >> $GITHUB_ENV
+            OPENSSL_DIR=$(cygpath --unix "$OPENSSL_DIR")
+            OPENSSL_INSTALL_PATH=$(cygpath --unix "$OPENSSL_INSTALL_PATH")
+            OPENSSL_SOURCE_PATH=$(cygpath --unix "$OPENSSL_SOURCE_PATH")
           fi
+          echo "OPENSSL_DIR=${OPENSSL_DIR}" >> $GITHUB_ENV
+          echo "OPENSSL_INSTALL_PATH=${OPENSSL_INSTALL_PATH}" >> $GITHUB_ENV
+          echo "OPENSSL_SOURCE_PATH=${OPENSSL_SOURCE_PATH}" >> $GITHUB_ENV
 
       - name: Windows Configure VCode
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
