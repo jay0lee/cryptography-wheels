@@ -80,10 +80,10 @@ jobs:
           echo "MAKE=${MAKE}" >> $GITHUB_ENV
           "${PERL}" ./Configure --libdir=lib --prefix="${OPENSSL_INSTALL_PATH}" $OPENSSL_CONFIG_OPTS
 
-      - name: Rename GNU link on Windows
-        if: runner.os == 'Windows'
-        run: |
-          mv -v /usr/bin/link /usr/bin/gnulink
+  #    - name: Rename GNU link on Windows
+  ##      if: runner.os == 'Windows'
+  #      run: |
+  #        mv -v /usr/bin/link /usr/bin/gnulink
 
       - name: Make OpenSSL
         run: |
