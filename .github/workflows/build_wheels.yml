@@ -6,10 +6,12 @@ on:
 jobs:
   build_wheels:
     name: Build on ${{ matrix.os }}
-    runs-on: [ macos-15-intel, macos-26, ubuntu-24.04-arm, ubuntu-24.04, windows-2025, windows-11-arm ]
+    runs-on: {{ matrix.os }}
       
     strategy:
       fail-fast: false
+      matrix:
+        os: [ macos-15-intel, macos-26, ubuntu-24.04-arm, ubuntu-24.04, windows-2025, windows-11-arm ]
 
     steps:
       - name: Checkout Repository
