@@ -19,7 +19,8 @@ jobs:
       - name: Clone Cryptography (Latest Stable)
         run: |
           # Clone the official repo
-          git clone https://github.com/pyca/cryptography.git .
+          git clone https://github.com/pyca/cryptography.git
+          cd cryptography
           
           # Find the latest stable tag (excluding alpha/beta/rc)
           # 'git describe' finds the most recent tag reachable from a commit
