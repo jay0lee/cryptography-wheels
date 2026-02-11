@@ -41,6 +41,11 @@ jobs:
             export MACOSX_DEPLOYMENT_TARGET="${MACOS_MAJOR}.0"
             echo "We are running on MacOS ${MACOSX_DEPLOYMENT_TARGET}"
             echo "MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}" >> $GITHUB_ENV
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            # fix paths
+            echo "OPENSSL_DIR=$(cygpath \"${OPENSSL_DIR}\")" >> $GITHUB_ENV
+            echo "OPENSSL_INSTALL_PATH=$(cygpath \"${OPENSSL_INSTALL_PATH}\")" >> $GITHUB_ENV
+            echo "OPENSSL_SOURCE_PATH=$(cygpath \"${OPENSSL_SOURCE_PATH}\")" >> $GITHUB_ENV
           fi
 
       - name: Windows Configure VCode
