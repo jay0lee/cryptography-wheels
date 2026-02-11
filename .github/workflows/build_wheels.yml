@@ -121,6 +121,7 @@ jobs:
         env:
           CIBW_SKIP: "cp36-* cp37-* cp38-* cp39-*"
           CIBW_BEFORE_BUILD: "pip install setuptools-rust"
+          CIBW_ENVIRONMENT: "OPENSSL_DIR=${{ env.OPENSSL_DIR }}"
         run: |
           cd cryptography
           python -m pip install cibuildwheel
