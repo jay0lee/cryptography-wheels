@@ -34,16 +34,9 @@ jobs:
           git checkout $latest_tag
           echo "Building Cryptography Version: $latest_tag"
 
-      - name: Install Rust (Windows only)
-        # Windows runners might need an explicit Rust toolchain update for ARM64 builds
-        if: runner.os == 'Windows'
-        uses: dtolnay/rust-toolchain@df9545d60616606550658b163e0e47be792cdb69
-        with:
-          targets: aarch64-pc-windows-msvc
-
       - name: Build wheels
         env:
-          CIBW_SKIP: "pp* cp36-* cp37-*"
+          CIBW_SKIP: "cp36-* cp37-* cp38-* cp39-*"
           CIBW_BEFORE_BUILD: "pip install setuptools-rust"
         run: |
           cd cryptography
