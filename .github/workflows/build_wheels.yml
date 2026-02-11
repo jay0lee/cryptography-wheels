@@ -38,16 +38,13 @@ jobs:
           targets: aarch64-pc-windows-msvc
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@298ed2fb2c105540f5ed055e8a6ad78d82dd3a7e
         env:
-          # Use the matrix arch to tell cibuildwheel what to build
-          #CIBW_ARCHS: ${{ matrix.arch }}
-          
-          # Optional: Skip PyPy or older Python versions to save time
           CIBW_SKIP: "pp* cp36-* cp37-*"
-          
-          # Cryptography specific: Ensure we have the build dependencies
           CIBW_BEFORE_BUILD: "pip install setuptools-rust"
+        run:
+          cd cryptography
+          python -m pip install cibuildwheel
+          python -m cibuildwheel --output-dir wheelhouse
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
