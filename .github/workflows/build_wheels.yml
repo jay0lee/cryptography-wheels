@@ -1,6 +1,10 @@
 name: Build Cryptography Wheels
 
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+     - cron: '0 10 * * *'
 
 jobs:
   build_wheels:
