@@ -153,3 +153,29 @@ jobs:
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
+
+  release_wheels:
+    name: Create Release
+    needs: build_wheels
+    runs-on: ubuntu-minimal
+    permissions:
+      contents: write # Required to create releases
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_wheels
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-${{ steps.date.outputs.date }}-${{ github.run_id }}
+          name: Release ${{ steps.date.outputs.date }}
+          draft: false
+          prerelease: false
+          files: |
+            all_wheels/**/*.whl
