@@ -24,6 +24,17 @@ jobs:
 
       - name: Env setup
         run: |
+          case $RUNNER_ARCH in
+            X64)
+              echo "arch=x86_64" >> $GITHUB_ENV
+              ;;
+            ARM64)
+              echo "arch=arm64" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "arch=${RUNNER_ARCH}" >> $GITHUB_ENV
+              ;;
+          esac
           export OPENSSL_INSTALL_PATH="${GITHUB_WORKSPACE}/bin/ssl"
           export OPENSSL_DIR="$OPENSSL_INSTALL_PATH"
           export OPENSSL_SOURCE_PATH="${GITHUB_WORKSPACE}/src/openssl"
@@ -57,6 +68,8 @@ jobs:
       - name: Windows Configure VCode
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         if: runner.os == 'Windows'
+        with:
+          arch: ${{ runner.arch }}
 
       - name: Windows NASM Install
         uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
