@@ -16,7 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-15-intel, macos-26, ubuntu-24.04-arm, ubuntu-24.04, windows-2025, windows-11-arm ]
+        os:
+          - macos-15-intel
+          - macos-26
+          #- ubuntu-24.04-arm
+          #- ubuntu-24.04
+          #- windows-2025
+          - windows-11-arm
 
     steps:
       - name: Checkout Repository
@@ -112,11 +118,6 @@ jobs:
           cd "${OPENSSL_SOURCE_PATH}"
           # install_sw saves us ages processing man pages :-)
           $MAKE install_sw
-
-      - name: Rename GNU link on Windows (again)
-        if: runner.os == 'Windows'
-        run: |
-          mv -v /usr/bin/gnulink /usr/bin/link
 
       - name: Run OpenSSL
         run: |
