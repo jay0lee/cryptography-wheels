@@ -65,7 +65,6 @@ jobs:
           echo "OPENSSL_SOURCE_PATH=${OPENSSL_SOURCE_PATH}" >> $GITHUB_ENV
           echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
           echo "CRYPTOGRAPHY_BUILD_OPENSSL_NO_LEGACY=1" >> $GITHUB_ENV
-          echo "CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> $GITHUB_ENV
 
       - name: Get latest stable OpenSSL source
