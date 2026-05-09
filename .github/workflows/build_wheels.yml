@@ -138,7 +138,10 @@ jobs:
         run: |
           # calculate with python because date on MacOS is just stupid
           DEPS_CUTOFF=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%dT00:00:00Z'))")
-          
+
+          # Install uv
+          python -m pip install uv
+
           # Use uv to calculate the highest version published before cutoff
           echo "cryptography" | python -m uv pip compile - --exclude-newer "$DEPS_CUTOFF" > reqs.txt
           
