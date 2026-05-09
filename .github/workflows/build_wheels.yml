@@ -166,13 +166,19 @@ jobs:
         shell: bash
         env:
           CIBW_SKIP: "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-* cp314t-*"
-          # Install uv inside the cibuildwheel virtual environment, then use it to grab dependencies
-          CIBW_BEFORE_BUILD: "python -m uv pip install setuptools-rust"
+          CIBW_BEFORE_BUILD: >
+            curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py &&
+            python get-pip.py &&
+            python -m pip install uv &&
+            python -m uv pip install setuptools-rust
           CIBW_ENVIRONMENT: "OPENSSL_DIR=${{ env.OPENSSL_DIR }}"
-          # Instruct cibuildwheel to use uv as the build frontend instead of standard pip
           CIBW_BUILD_FRONTEND: "build[uv]"
         run: |
-          # Ensure uv and cibuildwheel are installed on the main runner
+          # Guarantee pip exists on the main runner before installing cibuildwheel
+          curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+          python get-pip.py
+
+          # Install build requirements
           python -m pip install uv cibuildwheel
           
           cd cryptography
