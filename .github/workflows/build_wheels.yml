@@ -133,22 +133,47 @@ jobs:
           echo "Files:"
           ls -al "$OPENSSL_INSTALL_PATH"
 
+      - name: Resolve 2-week-old version with uv
+        shell: bash
+        run: |
+          # calculate with python because date on MacOS is just stupid
+          DEPS_CUTOFF=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%dT00:00:00Z'))")
+          
+          # Use uv to calculate the highest version published before cutoff
+          echo "cryptography" | python -m uv pip compile - --exclude-newer "$DEPS_CUTOFF" > reqs.txt
+          
+          # Extract just the version string (e.g., 42.0.5)
+          CRYPTO_VERSION=$(grep "^cryptography==" reqs.txt | cut -d '=' -f 3)
+          
+          echo "Resolved version: $CRYPTO_VERSION"
+          
+          # Save it to the GitHub environment for the next steps
+          echo "CRYPTO_VERSION=$CRYPTO_VERSION" >> $GITHUB_ENV
+
       - name: Clone Cryptography
+        shell: bash
         run: |
           git clone https://github.com/pyca/cryptography.git
           cd cryptography
-          latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
-          git checkout $latest_tag
-          echo "Building Cryptography Version: $latest_tag"
+          
+          # Check out the exact version tag resolved by uv
+          git checkout ${{ env.CRYPTO_VERSION }}
+          echo "Building Cryptography Version: ${{ env.CRYPTO_VERSION }}"
 
       - name: Build wheels
+        shell: bash
         env:
           CIBW_SKIP: "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-* cp314t-*"
-          CIBW_BEFORE_BUILD: "pip install setuptools-rust"
+          # Install uv inside the cibuildwheel virtual environment, then use it to grab dependencies
+          CIBW_BEFORE_BUILD: "python -m pip install uv && uv pip install setuptools-rust"
           CIBW_ENVIRONMENT: "OPENSSL_DIR=${{ env.OPENSSL_DIR }}"
+          # Instruct cibuildwheel to use uv as the build frontend instead of standard pip
+          CIBW_BUILD_FRONTEND: "build[uv]"
         run: |
+          # Ensure uv and cibuildwheel are installed on the main runner
+          python -m pip install uv cibuildwheel
+          
           cd cryptography
-          python -m pip install cibuildwheel
           python -m cibuildwheel --output-dir ../wheelhouse
 
       - name: Upload Artifacts
