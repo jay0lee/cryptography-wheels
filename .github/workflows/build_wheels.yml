@@ -137,6 +137,8 @@ jobs:
         run: |
           # calculate with python because date on MacOS is just stupid
           DEPS_CUTOFF=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+          
+          echo "Will use packages older than two weeks ago, ${DEPS_CUTOFF}"
           # Install uv
           python -m pip install uv
 
