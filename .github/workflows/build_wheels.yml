@@ -132,25 +132,35 @@ jobs:
           echo "Files:"
           ls -al "$OPENSSL_INSTALL_PATH"
 
-      - name: Resolve 2-week-old version with uv
+      - name: Resolve pinned cryptography version from GAM
         shell: bash
         run: |
-          # calculate with python because date on MacOS is just stupid
-          DEPS_CUTOFF=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+          echo "Fetching pyproject.toml from the GAM repository..."
+          curl -sSL "https://raw.githubusercontent.com/GAM-team/GAM/main/pyproject.toml" -o gam_pyproject.toml
           
-          echo "Will use packages older than two weeks ago, ${DEPS_CUTOFF}"
-          # Install uv
-          python -m pip install uv
-
-          # Use uv to calculate the highest version published before cutoff
-          echo "cryptography" | python -m uv pip compile - --exclude-newer "$DEPS_CUTOFF" > reqs.txt
+          # Extract the explicit version pin using Python regex to ensure compatibility across runner default Pythons
+          CRYPTO_VERSION=$(python3 -c "
+          import re
+          import sys
+          try:
+              with open('gam_pyproject.toml', 'r', encoding='utf-8') as f:
+                  content = f.read()
+              # Matches 'cryptography==X.Y.Z' inside quotes
+              match = re.search(r'[\'\"]cryptography\s*==\s*([0-9\.]+)[\'\"]', content)
+              if match:
+                  print(match.group(1))
+              else:
+                  sys.exit(1)
+          except Exception as e:
+              sys.exit(1)
+          ")
           
-          # Extract just the version string (e.g., 42.0.5)
-          CRYPTO_VERSION=$(grep "^cryptography==" reqs.txt | cut -d '=' -f 3)
+          if [ -z "$CRYPTO_VERSION" ]; then
+            echo "Failed to extract cryptography version from GAM's pyproject.toml"
+            exit 1
+          fi
           
-          echo "Resolved version: $CRYPTO_VERSION"
-          
-          # Save it to the GitHub environment for the next steps
+          echo "Resolved version from GAM: $CRYPTO_VERSION"
           echo "CRYPTO_VERSION=$CRYPTO_VERSION" >> $GITHUB_ENV
 
       - name: Clone Cryptography
@@ -159,7 +169,7 @@ jobs:
           git clone https://github.com/pyca/cryptography.git
           cd cryptography
           
-          # Check out the exact version tag resolved by uv
+          # Check out the exact version tag resolved from GAM
           git checkout ${{ env.CRYPTO_VERSION }}
           echo "Building Cryptography Version: ${{ env.CRYPTO_VERSION }}"
 
