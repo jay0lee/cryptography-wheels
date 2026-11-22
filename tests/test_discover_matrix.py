@@ -101,11 +101,21 @@ dependencies = ["urllib3>=2.0.0"]
                 active = get_supported_runners(today=date(2026, 11, 22))
         self.assertEqual([r["os"] for r in active], ["ubuntu-24.04"])
 
-    def test_get_supported_runners_deduplicates_windows_per_arch(self):
+    def test_get_supported_runners_selects_one_per_os_family_and_arch(self):
         sample_readme = """
 ## Available Images
 | Image | Architecture | YAML Label | Included Software |
 |-------|--------------|------------|-------------------|
+| Ubuntu 26.04 | x64 | `ubuntu-26.04` | ... |
+| Ubuntu 24.04 | x64 | `ubuntu-24.04`, or `ubuntu-latest` | ... |
+| Ubuntu 22.04 | x64 | `ubuntu-22.04` | ... |
+| Ubuntu 24.04 Arm64 | arm64 | `ubuntu-24.04-arm` | ... |
+| Ubuntu 22.04 Arm64 | arm64 | `ubuntu-22.04-arm` | ... |
+| Xcode 27 Beta (Preview) | arm64 | `xcode-27` | ... |
+| macOS 26 | arm64 | `macos-26` | ... |
+| macOS 15 | arm64 | `macos-15` | ... |
+| macOS 26 Intel | x64 | `macos-26-intel` | ... |
+| macOS 15 Intel | x64 | `macos-15-intel` | ... |
 | Windows Server 2025 | x64 | `windows-2025`, or `windows-latest` | ... |
 | Windows Server 2022 | x64 | `windows-2022` | ... |
 | Windows 11 Arm64 | arm64 | `windows-11-arm` | ... |
@@ -113,7 +123,29 @@ dependencies = ["urllib3>=2.0.0"]
         with patch("scripts.discover_matrix.http_get_text", return_value=sample_readme):
             with patch("scripts.discover_matrix.github_api_get", return_value=[]):
                 active = get_supported_runners(today=date(2026, 11, 22))
-        self.assertEqual([r["os"] for r in active], ["windows-2025", "windows-11-arm"])
+        self.assertEqual(
+            [r["os"] for r in active],
+            [
+                "ubuntu-22.04",
+                "ubuntu-22.04-arm",
+                "macos-15",
+                "macos-15-intel",
+                "windows-2025",
+                "windows-11-arm",
+            ],
+        )
+
+    def test_get_supported_runners_falls_back_to_preview_for_new_target(self):
+        sample_readme = """
+## Available Images
+| Image | Architecture | YAML Label | Included Software |
+|-------|--------------|------------|-------------------|
+| Ubuntu 24.04 Preview | arm64 | `ubuntu-24.04-arm` | ... |
+"""
+        with patch("scripts.discover_matrix.http_get_text", return_value=sample_readme):
+            with patch("scripts.discover_matrix.github_api_get", return_value=[]):
+                active = get_supported_runners(today=date(2026, 11, 22))
+        self.assertEqual([r["os"] for r in active], ["ubuntu-24.04-arm"])
 
     def test_check_latest_wheel_release_matches(self):
         mock_release = {

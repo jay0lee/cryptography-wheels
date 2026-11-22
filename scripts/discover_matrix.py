@@ -260,8 +260,24 @@ def fetch_runner_brownouts(labels: list[str], token: str | None = None) -> dict[
     return result
 
 
+def _runner_version_key(label: str) -> tuple[int, ...]:
+    """Extract numeric version components from a runner label for OS version comparison."""
+    nums = re.findall(r"\d+", label)
+    return tuple(int(n) for n in nums)
+
+
+def _is_preview_runner(runner: dict[str, Any]) -> bool:
+    return bool(runner.get("preview")) or runner["os"].lower().startswith("xcode-")
+
+
 def get_supported_runners(token: str | None = None, today: date | None = None) -> list[dict[str, Any]]:
-    """Discover all active, free GitHub-hosted runners suitable for wheel builds."""
+    """Discover one optimal active free GitHub-hosted runner per (os_family, arch).
+
+    For Linux and macOS, selects the oldest active non-preview OS version per architecture so
+    built wheels achieve maximum forward compatibility across newer OS/glibc releases.
+    For Windows, selects the newest active non-preview runner per architecture to match
+    jay0lee/python-boringssl-latest.
+    """
     readme_text = http_get_text(RUNNER_IMAGES_README_URL)
     if readme_text is None:
         # Fallback through GitHub Contents API if raw host fails
@@ -278,7 +294,7 @@ def get_supported_runners(token: str | None = None, today: date | None = None) -
     check_date = today or datetime.now(timezone.utc).date()
     brownouts = fetch_runner_brownouts([r["os"] for r in runners], token=token)
 
-    active_runners: list[dict[str, Any]] = []
+    by_target: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for r in runners:
         fb, cutoff = brownouts.get(r["os"], (None, None))
         if fb and cutoff:
@@ -287,30 +303,25 @@ def get_supported_runners(token: str | None = None, today: date | None = None) -
             if check_date >= cutoff:
                 r["active"] = False
         if r["active"]:
-            active_runners.append(
-                {
-                    "os": r["os"],
-                    "os_family": r["os_family"],
-                    "arch": r["arch"],
-                    "name": r["name"],
-                    "rust_target": r["rust_target"],
-                }
-            )
+            by_target.setdefault((r["os_family"], r["arch"]), []).append(r)
 
-    # Keep only the newest free Windows runner per architecture (e.g. windows-2025 over windows-2022),
-    # because Python Windows wheel tags (win_amd64 / win_arm64) have no OS version differentiation and
-    # matching python-boringssl-latest avoids duplicate MSVC/CRT builds.
     selected: list[dict[str, Any]] = []
-    windows_by_arch: dict[str, dict[str, Any]] = {}
-    for r in active_runners:
-        if r["os_family"] == "windows":
-            arch = r["arch"]
-            prev = windows_by_arch.get(arch)
-            if prev is None or r["os"] > prev["os"]:
-                windows_by_arch[arch] = r
+    for (os_family, _arch), candidates in by_target.items():
+        non_preview = [c for c in candidates if not _is_preview_runner(c)]
+        pool = non_preview if non_preview else candidates
+        if os_family == "windows":
+            chosen = max(pool, key=lambda c: (_runner_version_key(c["os"]), c["os"]))
         else:
-            selected.append(r)
-    selected.extend(windows_by_arch.values())
+            chosen = min(pool, key=lambda c: (_runner_version_key(c["os"]), c["os"]))
+        selected.append(
+            {
+                "os": chosen["os"],
+                "os_family": chosen["os_family"],
+                "arch": chosen["arch"],
+                "name": chosen["name"],
+                "rust_target": chosen["rust_target"],
+            }
+        )
 
     return selected
 
