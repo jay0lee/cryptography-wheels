@@ -2,227 +2,297 @@ name: Build Cryptography Wheels
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build_wheels.yml'
+      - 'scripts/**'
   workflow_dispatch:
+    inputs:
+      cryptography_version:
+        description: 'Specific cryptography version tag (leave blank to read from GAM main pyproject.toml)'
+        required: false
+        default: ''
+      force_rebuild:
+        description: 'Force rebuild even if latest release already matches'
+        type: boolean
+        default: true
   schedule:
-     - cron: '0 10 * * *'
+    # Daily check at 10:00 UTC (automatically skips if neither cryptography version nor python-boringssl-latest changed)
+    - cron: '0 10 * * *'
+
+permissions:
+  contents: write
+  actions: read
 
 jobs:
+  discover:
+    name: Discover Runners and Versions
+    runs-on: ubuntu-slim
+    outputs:
+      matrix: ${{ steps.discovery.outputs.matrix }}
+      cryptography_version: ${{ steps.discovery.outputs.cryptography_version }}
+      python_boringssl_tag: ${{ steps.discovery.outputs.python_boringssl_tag }}
+      python_version: ${{ steps.discovery.outputs.python_version }}
+      boringssl_version: ${{ steps.discovery.outputs.boringssl_version }}
+      should_build: ${{ steps.discovery.outputs.should_build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Discover dynamic runner matrix and dependency versions
+        id: discovery
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARGS=()
+          if [ -n "${{ github.event.inputs.cryptography_version }}" ]; then
+            ARGS+=("--cryptography-version" "${{ github.event.inputs.cryptography_version }}")
+          fi
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            ARGS+=("--force-rebuild")
+          fi
+          python3 scripts/discover_matrix.py "${ARGS[@]}"
+
   build_wheels:
-    defaults:
-      run:
-        shell: bash
-    env:
-      OPENSSL_CONFIG_OPTS: no-fips --api=3.0.0 no-docs no-ssl3 no-tls1 no-tls1_1 no-dtls no-comp no-srp no-psk no-engine no-dynamic-engine no-nextprotoneg no-weak-ssl-ciphers no-idea no-seed no-camellia no-sm2 no-sm3 no-sm4 no-rc2 no-rc4 no-rc5 no-md2 no-md4 no-cast no-shared no-tests -O3
-    
-    name: Build on ${{ matrix.os }}
+    name: "Wheel: ${{ matrix.name }}"
+    needs: discover
+    if: needs.discover.outputs.should_build == 'true'
     runs-on: ${{ matrix.os }}
-      
+    timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        os:
-          - macos-15-intel
-          - macos-26
-          #- ubuntu-24.04-arm
-          #- ubuntu-24.04
-          #- windows-2025
-          - windows-11-arm
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - name: Env setup
-        run: |
-          case $RUNNER_ARCH in
-            X64)
-              echo "arch=x86_64" >> $GITHUB_ENV
-              ;;
-            ARM64)
-              echo "arch=arm64" >> $GITHUB_ENV
-              ;;
-            *)
-              echo "arch=${RUNNER_ARCH}" >> $GITHUB_ENV
-              ;;
-          esac
-          export OPENSSL_INSTALL_PATH="${GITHUB_WORKSPACE}/bin/ssl"
-          export OPENSSL_DIR="$OPENSSL_INSTALL_PATH"
-          export OPENSSL_SOURCE_PATH="${GITHUB_WORKSPACE}/src/openssl"
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            MACOS_MAJOR=$(sw_vers -productVersion | cut -d '.' -f 1)
-            export MACOSX_DEPLOYMENT_TARGET="${MACOS_MAJOR}.0"
-            echo "We are running on MacOS ${MACOSX_DEPLOYMENT_TARGET}"
-            echo "MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}" >> $GITHUB_ENV
-          elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            # fix paths
-            OPENSSL_DIR=$(cygpath --unix "$OPENSSL_DIR")
-            OPENSSL_INSTALL_PATH=$(cygpath --unix "$OPENSSL_INSTALL_PATH")
-            OPENSSL_SOURCE_PATH=$(cygpath --unix "$OPENSSL_SOURCE_PATH")
-          fi
-          export LD_LIBRARY_PATH="${OPENSSL_INSTALL_PATH}/lib:/usr/local/lib"
-          echo "OPENSSL_DIR=${OPENSSL_DIR}" >> $GITHUB_ENV
-          echo "OPENSSL_INSTALL_PATH=${OPENSSL_INSTALL_PATH}" >> $GITHUB_ENV
-          echo "OPENSSL_SOURCE_PATH=${OPENSSL_SOURCE_PATH}" >> $GITHUB_ENV
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "CRYPTOGRAPHY_BUILD_OPENSSL_NO_LEGACY=1" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> $GITHUB_ENV
-
-      - name: Get latest stable OpenSSL source
-        run: |
-          mkdir -vp "${GITHUB_WORKSPACE}/src"
-          cd "${GITHUB_WORKSPACE}/src"
-          git clone https://github.com/openssl/openssl.git
-          cd "${OPENSSL_SOURCE_PATH}"
-          export LATEST_STABLE_TAG=$(git tag --list openssl-* | grep -v alpha | grep -v beta | sort -Vr | head -n1)
-          echo "Checking out version ${LATEST_STABLE_TAG}"
-          git checkout "${LATEST_STABLE_TAG}"
-
-      - name: Windows Configure VCode
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        if: runner.os == 'Windows'
+      - name: Setup Python + BoringSSL
+        id: pybssl
+        uses: jay0lee/python-boringssl-latest@v1
         with:
-          arch: ${{ runner.arch }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Windows NASM Install
-        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
-        if: runner.os == 'Windows'
+      - name: Setup MSVC developer command prompt (Windows)
+        if: matrix.os_family == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
-      - name: Config OpenSSL
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install prebuilt bindgen-cli
+        uses: taiki-e/install-action@v2
+        continue-on-error: true
+        with:
+          tool: bindgen-cli
+
+      - name: Install Linux build dependencies (libclang / patchelf)
+        if: matrix.os_family == 'linux'
+        shell: bash
         run: |
-          cd "${OPENSSL_SOURCE_PATH}"
-          #if ([ "$RUNNER_OS" == "Windows" ] && [ "$RUNNER_ARCH" == "ARM64" ]); then
-            # https://github.com/openssl/openssl/issues/26239
-          #  export CFLAGS=-DNO_INTERLOCKEDOR64
-          #fi
-          # --libdir=lib is needed so Python can find OpenSSL libraries
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            PERL="c:\strawberry\perl\bin\perl.exe"
-            MAKE=nmake
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libclang-dev clang patchelf
+          LIBCLANG_DIR="$(dirname "$(find /usr/lib -name 'libclang*.so*' 2>/dev/null | head -n1)")"
+          if [ -n "$LIBCLANG_DIR" ] && [ -d "$LIBCLANG_DIR" ]; then
+            echo "LIBCLANG_PATH=$LIBCLANG_DIR" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure macOS deployment target and libclang
+        if: matrix.os_family == 'macos'
+        shell: bash
+        run: |
+          MACOS_MAJOR="$(sw_vers -productVersion | cut -d '.' -f 1)"
+          echo "MACOSX_DEPLOYMENT_TARGET=${MACOS_MAJOR}.0" >> "$GITHUB_ENV"
+          echo "macOS deployment target: ${MACOS_MAJOR}.0"
+          XCODE_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          if [ -d "$XCODE_LIB" ]; then
+            echo "LIBCLANG_PATH=$XCODE_LIB" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure Windows LLVM/libclang and MSVC tools
+        if: matrix.os_family == 'windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files\Git\usr\bin\link.exe") {
+            Rename-Item -Path "C:\Program Files\Git\usr\bin\link.exe" -NewName "gnulink.exe" -Force -ErrorAction SilentlyContinue
+          }
+
+          $candidates = @(
+            "C:\Program Files\LLVM\bin",
+            "C:\Program Files (x86)\LLVM\bin",
+            "C:\ProgramData\chocolatey\bin"
+          )
+          $libclangDir = $null
+          foreach ($dir in $candidates) {
+            if (Test-Path (Join-Path $dir "libclang.dll")) {
+              $libclangDir = $dir
+              break
+            }
+          }
+
+          if (-not $libclangDir) {
+            $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+            if ($clangCmd) {
+              $parent = Split-Path -Parent $clangCmd.Source
+              if (Test-Path (Join-Path $parent "libclang.dll")) {
+                $libclangDir = $parent
+              }
+            }
+          }
+
+          if (-not $libclangDir) {
+            Write-Host "LLVM/libclang not found; installing LLVM..."
+            choco install llvm -y --no-progress
+            foreach ($dir in @("C:\Program Files\LLVM\bin", "C:\ProgramData\chocolatey\bin")) {
+              if (Test-Path (Join-Path $dir "libclang.dll")) {
+                $libclangDir = $dir
+                break
+              }
+            }
+          }
+
+          if (-not $libclangDir) {
+            throw "Failed to locate libclang.dll required by bindgen"
+          }
+          Write-Host "Using LIBCLANG_PATH=$libclangDir"
+          echo "LIBCLANG_PATH=$libclangDir" >> $env:GITHUB_ENV
+
+      - name: Ensure bindgen CLI is available
+        shell: bash
+        run: |
+          if ! command -v bindgen >/dev/null 2>&1; then
+            cargo install --locked bindgen-cli
+          fi
+          bindgen --version
+
+      - name: Configure BoringSSL and PyO3 environment
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os_family }}" == "windows" ]]; then
+            echo "OPENSSL_DIR=$(cygpath -m "$BORINGSSL_INSTALL_PATH")" >> "$GITHUB_ENV"
           else
-            PERL=perl
-            MAKE=make
+            echo "OPENSSL_DIR=${BORINGSSL_INSTALL_PATH}" >> "$GITHUB_ENV"
           fi
-          echo "MAKE=${MAKE}" >> $GITHUB_ENV
-          "${PERL}" ./Configure --libdir=lib --prefix="${OPENSSL_INSTALL_PATH}" $OPENSSL_CONFIG_OPTS
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1" >> "$GITHUB_ENV"
+          ls -la "$BORINGSSL_INSTALL_PATH/lib"
 
-      - name: Rename GNU link on Windows
-        if: runner.os == 'Windows'
-        run: |
-          mv -v /usr/bin/link /usr/bin/gnulink
-
-      - name: Make OpenSSL
-        run: |
-          cd "${OPENSSL_SOURCE_PATH}"
-          # TODO: remove this once https://github.com/openssl/openssl/issues/26239 is fixed.
-          #if ([ "$RUNNER_OS" == "Windows" ] && [ "$RUNNER_ARCH" == "ARM64" ]); then
-          #  export CFLAGS=-DNO_INTERLOCKEDOR64
-          #fi
-          $MAKE
-
-      - name: Install OpenSSL
-        run: |
-          cd "${OPENSSL_SOURCE_PATH}"
-          # install_sw saves us ages processing man pages :-)
-          $MAKE install_sw
-
-      - name: Run OpenSSL
-        run: |
-          "${OPENSSL_INSTALL_PATH}/bin/openssl" version -a
-          file "${OPENSSL_INSTALL_PATH}/bin/openssl"
-          echo "Files:"
-          ls -al "$OPENSSL_INSTALL_PATH"
-
-      - name: Resolve pinned cryptography version from GAM
+      - name: Clone cryptography
         shell: bash
         run: |
-          echo "Fetching pyproject.toml from the GAM repository..."
-          curl -sSL "https://raw.githubusercontent.com/GAM-team/GAM/main/pyproject.toml" -o gam_pyproject.toml
-          
-          # Extract the explicit version pin using Python regex to ensure compatibility across runner default Pythons
-          CRYPTO_VERSION=$(python3 -c "
-          import re
-          import sys
-          try:
-              with open('gam_pyproject.toml', 'r', encoding='utf-8') as f:
-                  content = f.read()
-              # Matches 'cryptography==X.Y.Z' inside quotes
-              match = re.search(r'[\'\"]cryptography\s*==\s*([0-9\.]+)[\'\"]', content)
-              if match:
-                  print(match.group(1))
-              else:
-                  sys.exit(1)
-          except Exception as e:
-              sys.exit(1)
-          ")
-          
-          if [ -z "$CRYPTO_VERSION" ]; then
-            echo "Failed to extract cryptography version from GAM's pyproject.toml"
-            exit 1
+          git clone --depth 1 --branch "${{ needs.discover.outputs.cryptography_version }}" https://github.com/pyca/cryptography.git cryptography-src
+
+      - name: Build cryptography wheel
+        shell: bash
+        run: |
+          PKGS=("pip" "maturin>=1.14.1,<2" "cffi>=2.1" "setuptools!=74.0.0,!=74.1.0,!=74.1.1,!=74.1.2" "wheel")
+          if [[ "${{ matrix.os_family }}" == "linux" ]]; then
+            PKGS+=("auditwheel")
           fi
-          
-          echo "Resolved version from GAM: $CRYPTO_VERSION"
-          echo "CRYPTO_VERSION=$CRYPTO_VERSION" >> $GITHUB_ENV
+          "$PYTHON" -m pip install --upgrade "${PKGS[@]}"
+          mkdir -p wheelhouse
+          "$PYTHON" -m pip wheel cryptography-src \
+            --no-build-isolation \
+            --no-deps \
+            --config-settings=build-args=--features=pyo3/abi3-py311 \
+            -w wheelhouse/
+          ls -lh wheelhouse/
 
-      - name: Clone Cryptography
+      - name: Repair Linux wheel (manylinux)
+        if: matrix.os_family == 'linux'
         shell: bash
         run: |
-          git clone https://github.com/pyca/cryptography.git
-          cd cryptography
-          
-          # Check out the exact version tag resolved from GAM
-          git checkout ${{ env.CRYPTO_VERSION }}
-          echo "Building Cryptography Version: ${{ env.CRYPTO_VERSION }}"
+          "$PYTHON" scripts/repair_linux_wheel.py --wheelhouse wheelhouse
+          ls -lh wheelhouse/
 
-      - name: Build wheels
+      - name: Smoketest built wheel
         shell: bash
-        env:
-          CIBW_SKIP: "cp39-* cp310-* cp311-* cp312-* cp313** cp314t-* cp315*"
-          CIBW_BEFORE_BUILD: >
-            curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py &&
-            python get-pip.py &&
-            python -m pip install uv &&
-            python -m uv pip install setuptools-rust
-          CIBW_ENVIRONMENT: "OPENSSL_DIR=${{ env.OPENSSL_DIR }}"
-          CIBW_BUILD_FRONTEND: "build[uv]"
         run: |
-          # Guarantee pip exists on the main runner before installing cibuildwheel
-          curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-          python get-pip.py
+          rm -rf cryptography-src
+          "$PYTHON" -m venv smoketest-venv
+          if [[ "${{ matrix.os_family }}" == "windows" ]]; then
+            VENV_PY="smoketest-venv/Scripts/python.exe"
+          else
+            VENV_PY="smoketest-venv/bin/python"
+          fi
+          "$VENV_PY" -m pip install --upgrade pip
+          "$VENV_PY" -m pip install wheelhouse/*.whl
+          if [[ "${{ matrix.os_family }}" == "macos" ]]; then
+            find smoketest-venv/lib/*/site-packages/cryptography/hazmat/bindings -name '*.so' -exec otool -L {} \; -exec vtool -show {} \;
+          elif [[ "${{ matrix.os_family }}" == "linux" ]]; then
+            find smoketest-venv/lib/*/site-packages/cryptography/hazmat/bindings -name '*.so' -exec ldd {} \;
+          fi
+          "$VENV_PY" scripts/smoketest_wheel.py
 
-          # Install build requirements
-          python -m pip install uv cibuildwheel
-          
-          cd cryptography
-          python -m cibuildwheel --output-dir ../wheelhouse
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - name: Upload built wheel
+        uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.os }}
-          path: ./wheelhouse/*.whl
+          name: wheel-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+          retention-days: 2
 
   release_wheels:
-    name: Create Release
-    needs: build_wheels
+    name: Release Wheels
+    needs: [discover, build_wheels]
+    if: needs.discover.outputs.should_build == 'true'
     runs-on: ubuntu-slim
-    permissions:
-      contents: write # Required to create releases
     steps:
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Download all built wheels
+        uses: actions/download-artifact@v8
         with:
           path: all_wheels
+          pattern: wheel-*
+
+      - name: Get release date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Deduplicate wheels and generate manifest
+        env:
+          RELEASE_TAG: release-${{ steps.date.outputs.date }}-${{ github.run_id }}
+        run: |
+          python3 scripts/prepare_release.py \
+            --input-dir all_wheels \
+            --output-dir release_assets \
+            --release-tag "$RELEASE_TAG" \
+            --cryptography-version "${{ needs.discover.outputs.cryptography_version }}" \
+            --python-boringssl-tag "${{ needs.discover.outputs.python_boringssl_tag }}" \
+            --python-version "${{ needs.discover.outputs.python_version }}" \
+            --boringssl-version "${{ needs.discover.outputs.boringssl_version }}"
+          ls -lh release_assets/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: release-${{ steps.date.outputs.date }}-${{ github.run_id }}
-          name: Release ${{ steps.date.outputs.date }}
+          name: "cryptography ${{ needs.discover.outputs.cryptography_version }} + BoringSSL (${{ steps.date.outputs.date }})"
+          body: |
+            Automated `cryptography` ${{ needs.discover.outputs.cryptography_version }} (`abi3`, BoringSSL static build) wheels built with [`${{ needs.discover.outputs.python_boringssl_tag }}`](https://github.com/jay0lee/python-boringssl-latest/releases/tag/${{ needs.discover.outputs.python_boringssl_tag }}).
+
+            - **Python**: ${{ needs.discover.outputs.python_version }}
+            - **BoringSSL**: ${{ needs.discover.outputs.boringssl_version }}
+            - **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           draft: false
           prerelease: false
+          make_latest: true
           files: |
-            all_wheels/**/*.whl
+            release_assets/*
