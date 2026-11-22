@@ -102,9 +102,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libclang-dev clang patchelf
-          LIBCLANG_DIR="$(dirname "$(find /usr/lib -name 'libclang*.so*' 2>/dev/null | head -n1)")"
-          if [ -n "$LIBCLANG_DIR" ] && [ -d "$LIBCLANG_DIR" ]; then
-            echo "LIBCLANG_PATH=$LIBCLANG_DIR" >> "$GITHUB_ENV"
+          LIBCLANG_FILE="$(find /usr/lib -maxdepth 4 \( -name 'libclang.so' -o -name 'libclang-[0-9]*.so*' \) 2>/dev/null | head -n1)"
+          if [ -n "$LIBCLANG_FILE" ] && [ -f "$LIBCLANG_FILE" ]; then
+            echo "LIBCLANG_PATH=$(dirname "$LIBCLANG_FILE")" >> "$GITHUB_ENV"
           fi
 
       - name: Configure macOS deployment target and libclang
@@ -179,7 +179,24 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.os_family }}" == "windows" ]]; then
-            echo "OPENSSL_DIR=$(cygpath -m "$BORINGSSL_INSTALL_PATH")" >> "$GITHUB_ENV"
+            # Work around openssl-sys's bindgen allowlist regex (.*[/\\]openssl/[^/]+\.h) missing
+            # BoringSSL relative `#include "buf.h"` headers on Windows where Clang joins them with '\'.
+            STAGE_BSSL="${RUNNER_TEMP}/boringssl-win"
+            rm -rf "$STAGE_BSSL"
+            mkdir -p "$STAGE_BSSL"
+            cp -R "$BORINGSSL_INSTALL_PATH/include" "$STAGE_BSSL/include"
+            cp -R "$BORINGSSL_INSTALL_PATH/lib" "$STAGE_BSSL/lib"
+            export STAGE_BSSL_INC="$(cygpath -m "$STAGE_BSSL/include/openssl")"
+            "$PYTHON" - <<'PYEOF'
+          import os, pathlib, re
+          inc_dir = pathlib.Path(os.environ["STAGE_BSSL_INC"])
+          for hdr in inc_dir.glob("*.h"):
+              txt = hdr.read_text(encoding="utf-8")
+              updated = re.sub(r'^(\s*#include\s+)"([^"/]+\.h)"', r'\1<openssl/\2>', txt, flags=re.M)
+              if updated != txt:
+                  hdr.write_text(updated, encoding="utf-8")
+          PYEOF
+            echo "OPENSSL_DIR=$(cygpath -m "$STAGE_BSSL")" >> "$GITHUB_ENV"
           else
             echo "OPENSSL_DIR=${BORINGSSL_INSTALL_PATH}" >> "$GITHUB_ENV"
           fi
@@ -191,13 +208,23 @@ jobs:
         shell: bash
         run: |
           git clone --depth 1 --branch "${{ needs.discover.outputs.cryptography_version }}" https://github.com/pyca/cryptography.git cryptography-src
+          # Remove pyo3 abi3t feature so Python 3.15 emits standard cp311-abi3 wheels (compatible with 3.11-3.15+ and non-freethreaded patterns)
+          "$PYTHON" - <<'PYEOF'
+          import pathlib
+          p = pathlib.Path("cryptography-src/Cargo.toml")
+          txt = p.read_text(encoding="utf-8")
+          updated = txt.replace('features = ["abi3", "abi3t"]', 'features = ["abi3"]')
+          if updated != txt:
+              p.write_text(updated, encoding="utf-8")
+              print("Updated Cargo.toml pyo3 features to abi3-only")
+          PYEOF
 
       - name: Build cryptography wheel
         shell: bash
         run: |
           PKGS=("pip" "maturin>=1.14.1,<2" "cffi>=2.1" "setuptools!=74.0.0,!=74.1.0,!=74.1.1,!=74.1.2" "wheel")
           if [[ "${{ matrix.os_family }}" == "linux" ]]; then
-            PKGS+=("auditwheel")
+            PKGS+=("auditwheel" "patchelf")
           fi
           "$PYTHON" -m pip install --upgrade "${PKGS[@]}"
           mkdir -p wheelhouse
