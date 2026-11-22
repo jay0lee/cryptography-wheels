@@ -201,7 +201,7 @@ jobs:
           fi
           "$PYTHON" -m pip install --upgrade "${PKGS[@]}"
           mkdir -p wheelhouse
-          "$PYTHON" -m pip wheel cryptography-src \
+          "$PYTHON" -m pip wheel ./cryptography-src \
             --no-build-isolation \
             --no-deps \
             --config-settings=build-args=--features=pyo3/abi3-py311 \
